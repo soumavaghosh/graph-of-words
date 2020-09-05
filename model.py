@@ -1,38 +1,42 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from attention import graphAttentionHead
 import pickle
 
-class SkipGramModel(nn.Module):
+class GAT(nn.Module):
 
-    def __init__(self, doc_size, voc_size, emb_dimension):
+    def __init__(self, dim, n_nodes, nclass, dropout, alpha, nheads):
 
-        super(SkipGramModel, self).__init__()
-        self.voc_size = voc_size
-        self.doc_size = doc_size
-        self.emb_dimension = emb_dimension
-        self.d_embeddings = nn.Embedding(doc_size, emb_dimension, sparse=True)
-        self.u_embeddings = nn.Embedding(voc_size, emb_dimension, sparse=True)
-        self.v_embeddings = nn.Embedding(voc_size, emb_dimension, sparse=True)
-        self.init_emb()
+        super(GAT, self).__init__()
+        self.dropout = dropout
+        self.alpha = alpha
+        self.node_embedding = nn.Embedding(n_nodes, dim)
 
-    def init_emb(self):
+        self.attentions = [graphAttentionHead(dim, dropout, alpha) for _ in range(nheads)]
+        for i, attention in enumerate(self.attentions):
+            self.add_module('attention_{}'.format(i), attention)
 
-        initrange = 0.5 / self.emb_dimension*10
-        self.d_embeddings.weight.data.uniform_(-initrange, initrange)
-        self.u_embeddings.weight.data.uniform_(-initrange, initrange)
-        self.v_embeddings.weight.data.uniform_(-initrange, initrange)
+        self.linear1 = nn.Linear(dim * nheads, dim, bias=True)
+        self.att_weight = nn.Parameter(torch.zeros(size=(dim, 1)))
+        nn.init.xavier_uniform_(self.att_weight.data, gain=1.414)
+        self.linear2 = nn.Linear(dim, nclass, bias=True)
 
-    def forward(self, doc_u, pos_v, neg_v):
+        self.leakyrelu = nn.LeakyReLU(self.alpha)
 
-        emb_d = self.d_embeddings(doc_u)
-        emb_v = self.u_embeddings(pos_v)
-        emb_neg_v = self.u_embeddings(neg_v)
+    def forward(self, node, adj):
+        node = self.node_embedding(node)
+        adj = self.node_embedding(adj)
 
-        score_pos = torch.matmul(emb_d, torch.transpose(emb_v, 0, 1))
-        score_pos = -torch.sum(F.logsigmoid(score_pos))
+        node = F.dropout(node, self.dropout, training=self.training)
+        node = torch.cat([att(node, adj) for att in self.attentions], dim=1)
+        node = F.dropout(node, self.dropout, training=self.training)
+        node = F.elu(self.linear1(node))
+        return node
 
-        score_neg = torch.matmul(emb_d, torch.transpose(emb_neg_v, 0, 1))
-        score_neg = torch.sum(score_neg)
-
-        return score_pos + score_neg
+    def classify(self, input):
+        weight = self.leakyrelu(torch.mm(input, self.att_weight))
+        weight = F.softmax(torch.transpose(weight, 0, 1), dim = 1)
+        out = torch.mm(weight, input)
+        out = self.linear2(out)
+        return out
