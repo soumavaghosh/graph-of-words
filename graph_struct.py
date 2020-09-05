@@ -7,8 +7,10 @@ class Graph:
         #self.text = self.index_words(text, word2id)
         self.text = data[1]
         self.label = data[0]
-        self.words = set(self.text)
+        self.words = sorted(set(self.text))
         self.graph = {i:set() for i in self.words}
+        self.adj = [[0]*len(self.words) for _ in range(len(self.words))]
+        self.adj_map = {j:i for i,j in enumerate(self.words)}
         self.add_edges()
         # self.sub_graph_mem = {}
         #
@@ -28,8 +30,9 @@ class Graph:
         for i in range(n):
             for j in range(i-self.window, i+self.window+1):
                 if 0<=j<n:
-                    if self.text[i]!=self.text[j]:
-                        self.graph[self.text[i]].add(self.text[j])
+                    self.graph[self.text[i]].add(self.text[j])
+                    r, c = self.adj_map[self.text[i]], self.adj_map[self.text[j]]
+                    self.adj[r][c]+=1
 
     # def get_subgraph(self, n, d):
     #     self.visited[n] = True

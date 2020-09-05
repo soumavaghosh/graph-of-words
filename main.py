@@ -45,12 +45,18 @@ class graph_of_words:
         # print('done')
 
         data_train, data_test, n_nodes, nclass = read_data(config.dataset)
+        print(f'Number of nodes - {n_nodes}\n Number of class - {nclass}')
         self.train_graph_data = Parallel(n_jobs=-1)(delayed(Graph)(d) for d in tqdm(data_train, desc='Creating graphs train'))
         self.test_graph_data = Parallel(n_jobs=-1)(delayed(Graph)(d) for d in tqdm(data_test, desc='Creating graphs test'))
 
-        self.model = GAT(config.dim, n_nodes, nclass, config.dropout, config.alpha, config.nheads)
+        self.train_graph_data = [g for g in self.train_graph_data if len(g.words) <= 200]
+        self.test_graph_data = [g for g in self.test_graph_data if len(g.words) <= 200]
+
+        self.model = GAT(config.dim, n_nodes, nclass, config.dropout, config.alpha, config.nheads, config.n_units)
         optimizer = optim.Adam(self.model.parameters(), lr = config.lr, weight_decay = config.weight_decay)
         loss_fn = nn.CrossEntropyLoss()
+
+        print(self.model)
 
         cuda = 'cuda' if torch.cuda.is_available() else 'cpu'
         if cuda=='cuda':
@@ -64,9 +70,8 @@ class graph_of_words:
             error_lst = []
             for g in tqdm(self.train_graph_data, desc = f'Training epoch {e}'):
                 optimizer.zero_grad()
-                graph = g.graph
                 label = g.label
-                node_emb = torch.cat([self.model(torch.tensor([i], device=cuda), torch.tensor(list(j)+[i], device=cuda)) for i,j in graph.items()], dim = 0)
+                node_emb = self.model(torch.tensor(g.words, device=cuda), torch.tensor(g.adj, device=cuda))
                 out = self.model.classify(node_emb)
                 loss = loss_fn(out, torch.tensor([label], dtype=torch.long, device=cuda))
                 loss.backward()
@@ -83,9 +88,8 @@ class graph_of_words:
         self.model.eval()
         acc = []
         for g in tqdm(data, desc=f'Evaluating'):
-            graph = g.graph
             label = g.label
-            node_emb = torch.cat([self.model(torch.tensor([i], device=cuda), torch.tensor(list(j) + [i], device=cuda)) for i, j in graph.items()], dim=0)
+            node_emb = self.model(torch.tensor(g.words, device=cuda), torch.tensor(g.adj, device=cuda))
             out = self.model.classify(node_emb)
             out = torch.argmax(out)
             if cuda=='cuda':

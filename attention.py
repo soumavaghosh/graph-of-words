@@ -16,16 +16,30 @@ class graphAttentionHead(nn.Module):
 
         self.leakyrelu = nn.LeakyReLU(self.alpha)
 
-    def forward(self, node, adj):
-        #h = torch.mm(input, self.W)
-        N = adj.size()[0]
+    # def forward(self, node, adj):
+    #     #h = torch.mm(input, self.W)
+    #     N = adj.size()[0]
+    #
+    #     a_input = torch.cat([node.repeat(N, 1), adj], dim=1)
+    #     e = self.leakyrelu(torch.matmul(a_input, self.a))
+    #
+    #     attention = F.softmax(e, dim=0)
+    #     #attention = F.dropout(attention, self.dropout, training=self.training)
+    #     attention = torch.transpose(attention, 0,1)
+    #     h_prime = torch.matmul(attention, adj)
+    #
+    #     return F.elu(h_prime)
 
-        a_input = torch.cat([node.repeat(N, 1), adj], dim=1)
-        e = self.leakyrelu(torch.matmul(a_input, self.a))
+    def forward(self, nodes, adj):
+        N = nodes.size()[0]
 
-        attention = F.softmax(e, dim=0)
-        #attention = F.dropout(attention, self.dropout, training=self.training)
-        attention = torch.transpose(attention, 0,1)
-        h_prime = torch.matmul(attention, adj)
+        a_input = torch.cat([nodes.repeat(1, N).view(N * N, -1), nodes.repeat(N, 1)], dim=1).view(N, -1, 2 * self.dim)
+        e = self.leakyrelu(torch.matmul(a_input, self.a).squeeze(2))
 
-        return F.elu(h_prime)
+        zero_vec = -9e15 * torch.ones_like(e)
+        attention = torch.where(adj > 0, e, zero_vec)
+        attention = F.softmax(attention, dim=1)
+        attention = F.dropout(attention, self.dropout, training=self.training)
+        h_prime = torch.matmul(attention, nodes)
+
+        return h_prime
