@@ -47,10 +47,10 @@ class graph_of_words:
         data_train, data_test, n_nodes, nclass = read_data(config.dataset)
         print(f'Number of nodes - {n_nodes}\n Number of class - {nclass}')
         self.train_graph_data = Parallel(n_jobs=-1)(delayed(Graph)(d) for d in tqdm(data_train, desc='Creating graphs train'))
-        self.test_graph_data = Parallel(n_jobs=-1)(delayed(Graph)(d) for d in tqdm(data_test, desc='Creating graphs test'))
+        #self.test_graph_data = Parallel(n_jobs=-1)(delayed(Graph)(d) for d in tqdm(data_test, desc='Creating graphs test'))
 
-        self.train_graph_data = [g for g in self.train_graph_data if len(g.words) <= 200]
-        self.test_graph_data = [g for g in self.test_graph_data if len(g.words) <= 200]
+        #self.train_graph_data = [g for g in self.train_graph_data if len(g.words) <= 200]
+        #self.test_graph_data = [g for g in self.test_graph_data if len(g.words) <= 200]
 
         self.model = GAT(config.dim, n_nodes, nclass, config.dropout, config.alpha, config.nheads, config.n_units)
         optimizer = optim.Adam(self.model.parameters(), lr = config.lr, weight_decay = config.weight_decay)
@@ -71,7 +71,8 @@ class graph_of_words:
             for g in tqdm(self.train_graph_data, desc = f'Training epoch {e}'):
                 optimizer.zero_grad()
                 label = g.label
-                node_emb = self.model(torch.tensor(g.words, device=cuda), torch.tensor(g.adj, device=cuda))
+                node_emb = self.model(torch.tensor(g.words, device=cuda), torch.tensor(g.adj, device=cuda),
+                                      torch.tensor(g.fiedler_encoding, device=cuda))
                 out = self.model.classify(node_emb)
                 loss = loss_fn(out, torch.tensor([label], dtype=torch.long, device=cuda))
                 loss.backward()
@@ -82,14 +83,15 @@ class graph_of_words:
                     error_lst.append(loss.data.numpy())
             print(f'Epoch {e} loss - {sum(error_lst)/len(error_lst)}')
             print(f'Accuracy train - {self.evaluate(self.train_graph_data, cuda)}')
-            print(f'Accuracy test - {self.evaluate(self.test_graph_data, cuda)}')
+            #print(f'Accuracy test - {self.evaluate(self.test_graph_data, cuda)}')
 
     def evaluate(self, data, cuda):
         self.model.eval()
         acc = []
         for g in tqdm(data, desc=f'Evaluating'):
             label = g.label
-            node_emb = self.model(torch.tensor(g.words, device=cuda), torch.tensor(g.adj, device=cuda))
+            node_emb = self.model(torch.tensor(g.words, device=cuda), torch.tensor(g.adj, device=cuda),
+                                  torch.tensor(g.fiedler_encoding, dtype = torch.float32, device=cuda))
             out = self.model.classify(node_emb)
             out = torch.argmax(out)
             if cuda=='cuda':

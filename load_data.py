@@ -1,10 +1,11 @@
 from collections import Counter
+from random import sample
 
 def read_data(dataset):
-    with open(f'{dataset}-train-stemmed.txt', 'r') as f:
+    with open(f'{dataset}-train-all-terms.txt', 'r') as f:
         data_train = f.readlines()
 
-    with open(f'{dataset}-test-stemmed.txt', 'r') as f:
+    with open(f'{dataset}-test-all-terms.txt', 'r') as f:
         data_test = f.readlines()
 
     data_train = [x.replace('\n', '').split('\t') for x in data_train]
@@ -21,8 +22,9 @@ def read_data(dataset):
 
     classes = list(classes)
     words_ctr = Counter(words)
-    words = [i for i,j in words_ctr.items() if j>3]
-    word2id = {j:i for i,j in enumerate(words)}
+    words = [i for i,j in words_ctr.items() if j>2]
+    word2id = {j:i+1 for i,j in enumerate(words)}
+    word2id[0] = None
     class2id = {j:i for i, j in enumerate(classes)}
 
     data_train = [(class2id[i], [word2id.get(x, len(word2id)) for x in j.split(' ')]) for i,j in data_train]
